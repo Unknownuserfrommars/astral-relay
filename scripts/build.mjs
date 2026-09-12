@@ -74,6 +74,9 @@ async function main() {
   });
 
   await copyFile(MANIFEST_PATH, path.join(PLUGIN_DIR, "manifest.json"));
+  // Cyrene-Plugins 收录清单要求插件目录内必须有 README.md；
+  // 放进构建而不是手动拷贝，否则下次 build 又会漏掉。
+  await copyFile(path.join(ROOT, "README.md"), path.join(PLUGIN_DIR, "README.md"));
   await copyFile(path.join(ROOT, "THIRD_PARTY_NOTICES.md"), path.join(PLUGIN_DIR, "THIRD_PARTY_NOTICES.md"));
   await copyPanelAssets();
 
