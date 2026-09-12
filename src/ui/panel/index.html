@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>编程套餐直通</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #5c4650;
+      --ink-soft: #8a6b76;
+      --pink: #e05a85;
+      --line: #f6dce6;
+      --warn: #b8860b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: linear-gradient(175deg, #fff8fb 0%, #fdeef5 100%);
+      color: var(--ink);
+      min-height: 100vh;
+      font-size: 13px;
+    }
+    h1 { font-size: 16px; margin: 0 0 4px; color: var(--pink); }
+    .sub { color: var(--ink-soft); margin-bottom: 16px; font-size: 12px; }
+    section {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    h2 { font-size: 13px; margin: 0 0 10px; }
+    label { display: block; margin-bottom: 4px; color: var(--ink-soft); font-size: 12px; }
+    select, input[type="text"], input[type="password"], input[type="number"] {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 6px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--pink);
+      color: #fff;
+      cursor: pointer;
+      font-size: 12px;
+      margin-right: 6px;
+    }
+    button.ghost { background: #fff; color: var(--ink); }
+    .row { display: flex; align-items: center; gap: 8px; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: #f3f3f3;
+      color: var(--ink-soft);
+    }
+    .badge.on { background: #e6f6ea; color: #2e7d32; }
+    .badge.off { background: #fdecea; color: #c62828; }
+    code {
+      display: block;
+      background: #faf3f7;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 9px;
+      font-size: 12px;
+      word-break: break-all;
+      margin-bottom: 8px;
+    }
+    .note { color: var(--ink-soft); font-size: 11px; line-height: 1.7; }
+    .warn { color: var(--warn); font-size: 11px; line-height: 1.7; }
+    a { color: var(--pink); }
+  </style>
+</head>
+<body>
+  <h1>编程套餐直通</h1>
+  <div class="sub">用自己的编程套餐订阅驱动 Cyrene，仅限 Code 模式的交互式对话。</div>
+
+  <section>
+    <h2>闸门状态 <span id="gate-badge" class="badge">读取中…</span></h2>
+    <div class="note" id="gate-note">
+      闸门只在 Code 模式的交互轮次开启。定时任务、朋友圈发帖与其它模式一律拒绝——
+      这是编程套餐条款的要求，不是功能缺失。
+    </div>
+  </section>
+
+  <section>
+    <h2>套餐</h2>
+    <label for="plan">选择套餐</label>
+    <select id="plan"></select>
+    <label for="key">订阅 Key（只写入宿主安全存储，不落明文）</label>
+    <input type="password" id="key" placeholder="留空则不修改已保存的 Key" autocomplete="off" />
+    <div class="row">
+      <button id="save-key">保存 Key</button>
+      <button id="clear-key" class="ghost">清除 Key</button>
+      <span id="key-state" class="badge">—</span>
+    </div>
+    <div class="note" id="terms" style="margin-top:10px"></div>
+  </section>
+
+  <section>
+    <h2>模型档案填这两项</h2>
+    <label>Base URL</label>
+    <code id="base-url">代理未运行</code>
+    <label>API Key（填这个 token，不是你的订阅 Key）</label>
+    <code id="token">—</code>
+    <div class="note">
+      token 每次启动随机生成，重启 Cyrene 后需要重新填。协议选 OpenAI 兼容。
+    </div>
+  </section>
+
+  <section>
+    <h2>高级</h2>
+    <label for="ttl">开窗存活上限（毫秒，10000–600000）</label>
+    <input type="number" id="ttl" min="10000" max="600000" step="1000" />
+    <button id="save-config">保存</button>
+    <div class="warn" style="margin-top:10px">
+      已知边界：闸门是时间窗，不是逐请求绑定。宿主不会把轮次标识带进 HTTP 头，
+      所以开窗期间若你在另一个窗口用同一个档案发起 Chat 轮次，该请求也会被放行。
+      调小这个值可以缩小窗口，但消不掉。
+    </div>
+  </section>
+
+  <script src="panel.js"></script>
+</body>
+</html>
