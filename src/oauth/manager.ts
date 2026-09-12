@@ -4,20 +4,8 @@ import { electronFetch } from "../network";
 import { prepareCallback } from "./callback";
 import { OAUTH_SPECS, redirectUri, type OAuthProviderId } from "./specs";
 
-export interface OAuthTokens { accessToken: string; refreshToken?: string; expiresAt: number; accountId?: string }
+export interface OAuthTokens { accessToken: string; refreshToken?: string; expiresAt: number }
 export const oauthSecretKey = (id: OAuthProviderId): string => `astral_relay_oauth_${id}`;
-function accountId(json: Record<string, unknown>): string | undefined {
-  if (typeof json.chatgpt_account_id === "string") return json.chatgpt_account_id;
-  for (const token of [json.id_token, json.access_token]) {
-    if (typeof token !== "string") continue;
-    try {
-      const claims = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
-      const id = claims?.["https://api.openai.com/auth"]?.chatgpt_account_id;
-      if (typeof id === "string") return id;
-    } catch { /* JWT claims are metadata only, never authentication. */ }
-  }
-  return undefined;
-}
 
 export function createOAuthManager(deps: {
   secrets?: PluginSecrets; signal: AbortSignal; fetchImpl?: typeof fetch;
@@ -54,7 +42,7 @@ export function createOAuthManager(deps: {
     let response: Response;
     try {
       response = await doFetch(spec.tokenUrl, {
-        method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", ...(id === "codex" ? { originator: "codex_cli_rs" } : {}) },
+        method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
         body: new URLSearchParams({ client_id: spec.clientId, ...params }).toString(),
         signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]), redirect: "error",
       });
@@ -68,7 +56,6 @@ export function createOAuthManager(deps: {
       accessToken: json.access_token,
       refreshToken: typeof json.refresh_token === "string" && json.refresh_token ? json.refresh_token : previous?.refreshToken,
       expiresAt: Date.now() + seconds * 1000,
-      accountId: id === "codex" ? accountId(json) ?? previous?.accountId : undefined,
     };
   }
   async function save(id: OAuthProviderId, value: OAuthTokens, version: number, signal: AbortSignal) {

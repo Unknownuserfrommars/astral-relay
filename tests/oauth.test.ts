@@ -6,7 +6,8 @@ import { createMockContext } from "./helpers";
 import { createHash } from "node:crypto";
 
 describe("OAuth lifecycle", () => {
-  it.each(["codex", "grok"] as const)("%s binds callback before browser, uses PKCE and secure storage", async (id) => {
+  it("grok binds callback before browser, uses PKCE and secure storage", async () => {
+    const id = "grok" as const;
     const ctx = createMockContext();
     let prepared = false;
     let challenge = "";
@@ -40,12 +41,12 @@ describe("OAuth lifecycle", () => {
 
   it("refreshes once for concurrent requests, preserves refresh token and account ID", async () => {
     const ctx = createMockContext();
-    ctx.secretStore.set(oauthSecretKey("codex"), JSON.stringify({ accessToken: "expired", refreshToken: "refresh-original", expiresAt: 1, accountId: "account-original" }));
+    ctx.secretStore.set(oauthSecretKey("grok"), JSON.stringify({ accessToken: "expired", refreshToken: "refresh-original", expiresAt: 1 }));
     const doFetch = vi.fn(async () => new Response(JSON.stringify({ access_token: "new-access", expires_in: 3600 })));
     const manager = createOAuthManager({ secrets: ctx.deps.secrets, signal: ctx.signal, fetchImpl: doFetch });
-    const results = await Promise.all([manager.getTokens("codex"), manager.getTokens("codex")]);
+    const results = await Promise.all([manager.getTokens("grok"), manager.getTokens("grok")]);
     expect(doFetch).toHaveBeenCalledTimes(1);
-    expect(results[0]).toMatchObject({ accessToken: "new-access", refreshToken: "refresh-original", accountId: "account-original" });
+    expect(results[0]).toMatchObject({ accessToken: "new-access", refreshToken: "refresh-original" });
     expect(results[0]).toEqual(results[1]);
   });
 
@@ -68,7 +69,7 @@ describe("OAuth lifecycle", () => {
     const openExternal = vi.fn();
     const fetchImpl = vi.fn();
     const manager = createOAuthManager({ signal: new AbortController().signal, openExternal, fetchImpl });
-    await expect(manager.login("codex")).rejects.toThrow("安全存储");
+    await expect(manager.login("grok")).rejects.toThrow("安全存储");
     expect(openExternal).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
   });

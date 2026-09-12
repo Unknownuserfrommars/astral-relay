@@ -10,13 +10,13 @@ import {
 describe("厂商目录", () => {
   it("包含订阅 Key 与 OAuth 接入目录", () => {
     const ids = PROVIDERS.map((p) => p.id).sort();
-    expect(ids).toEqual(["codex", "copilot", "grok", "minimax", "qwen", "tencent"]);
+    expect(ids).toEqual(["copilot", "grok", "minimax", "qwen", "tencent"]);
   });
 
   it("不收录 Z.ai / Anthropic / Google 订阅", () => {
     // 这条测试是条款边界的回归钉子：有人想加回来必须先改这里，
     // 改这里就会被 review 看到，而不是悄悄多一个选项。
-    for (const banned of ["zai", "glm", "anthropic", "claude", "gemini", "google"]) {
+    for (const banned of ["zai", "glm", "anthropic", "claude", "gemini", "google", "codex", "chatgpt", "openai"]) {
       expect(findProvider(banned)).toBeUndefined();
     }
   });
@@ -25,7 +25,6 @@ describe("厂商目录", () => {
     expect(requiresCodeMode(findProvider("qwen")!)).toBe(true);
     expect(requiresCodeMode(findProvider("tencent")!)).toBe(true);
     expect(requiresCodeMode(findProvider("minimax")!)).toBe(false);
-    expect(requiresCodeMode(findProvider("codex")!)).toBe(false);
     expect(requiresCodeMode(findProvider("grok")!)).toBe(false);
   });
 

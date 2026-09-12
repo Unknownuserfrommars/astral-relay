@@ -100,18 +100,18 @@ describe("插件契约（构建产物）", () => {
 
   it("OAuth 通过专用 IPC 连接，面板状态不暴露 token 或账号", async () => {
     const ctx = createMockContext();
-    ctx.secretStore.set("astral_relay_oauth_codex", JSON.stringify({ accessToken: "private-access", refreshToken: "private-refresh", accountId: "private-account", expiresAt: Date.now() + 3600000 }));
+    ctx.secretStore.set("astral_relay_oauth_grok", JSON.stringify({ accessToken: "private-access", refreshToken: "private-refresh", expiresAt: Date.now() + 3600000 }));
     await plugin.register(ctx);
     try {
       for (const name of ["oauth-login", "oauth-cancel", "oauth-logout", "oauth-models"]) expect(ctx.ipcChannels.has(name)).toBe(true);
       const state = await ctx.ipcChannels.get("get-state")!() as any;
-      const codex = state.providers.find((p: any) => p.id === "codex");
-      expect(codex).toMatchObject({ auth: "oauth", protocol: "responses", oauth: { connected: true } });
+      const grok = state.providers.find((p: any) => p.id === "grok");
+      expect(grok).toMatchObject({ auth: "oauth", protocol: "openai", oauth: { connected: true } });
       expect(JSON.stringify(state)).not.toContain("private-");
-      expect(await ctx.ipcChannels.get("save-key")!({ providerId: "codex", key: "wrong" })).toMatchObject({ ok: false });
+      expect(await ctx.ipcChannels.get("save-key")!({ providerId: "grok", key: "wrong" })).toMatchObject({ ok: false });
       expect(await ctx.ipcChannels.get("oauth-login")!("claude")).toMatchObject({ ok: false });
-      await ctx.ipcChannels.get("oauth-logout")!("codex");
-      expect(ctx.secretStore.has("astral_relay_oauth_codex")).toBe(false);
+      await ctx.ipcChannels.get("oauth-logout")!("grok");
+      expect(ctx.secretStore.has("astral_relay_oauth_grok")).toBe(false);
     } finally { await ctx.dispose(); }
   });
 

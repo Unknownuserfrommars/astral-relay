@@ -71,20 +71,18 @@ describe("路由解析", () => {
 describe("OAuth native transports", () => {
   const tokens = { accessToken: "private-oauth-access", expiresAt: Date.now() + 3600000, accountId: "account-123" };
   const event = (data: unknown) => `data: ${JSON.stringify(data)}\n\n`;
-  const output = { id: "fc-1", type: "function_call", call_id: "call-1", name: "read_file", arguments: '{"path":"a.ts"}' };
-  const sse = event({ type: "response.output_item.done", output_index: 0, item: output }) +
-    event({ type: "response.completed", response: { id: "response-1", status: "completed", output: [] } });
   const post = (base: string, key: string, body: unknown, path = "/responses") => fetch(base + path, {
     method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(body),
   });
 
-  it.each(["codex", "grok"])("%s accepts all modes and legacy host tokens while still requiring authentication", async (id) => {
+  it("grok accepts all modes and legacy host tokens while still requiring authentication", async () => {
+    const id = "grok";
     let calls = 0;
     const h = await startWith({ open: false, oauth: async () => tokens, fetchImpl: (async () => {
       calls += 1;
-      return id === "codex" ? new Response(sse, { headers: { "content-type": "text/event-stream" } }) : new Response('{"choices":[]}');
+      return new Response('{"choices":[]}');
     }) as typeof fetch });
-    const path = id === "codex" ? "/responses" : "/chat/completions";
+    const path = "/chat/completions";
     for (const mode of ["chat", "work", "learn", "code"]) {
       const response = await post(h.baseUrlFor(id), credential(id, mode), {}, path);
       expect(response.status).toBe(200);
@@ -99,37 +97,6 @@ describe("OAuth native transports", () => {
     expect(calls).toBe(6);
   });
 
-  it("Codex preserves tool continuation and normalizes native Responses requests", async () => {
-    let seen: any;
-    const h = await startWith({ open: false, oauth: async () => tokens, fetchImpl: (async (url, init) => {
-      seen = { url, init };
-      return new Response(sse, { headers: { "content-type": "text/event-stream" } });
-    }) as typeof fetch });
-    const input = [{ role: "assistant", content: [{ type: "input_text", text: "read" }] },
-      { type: "function_call_output", call_id: "call-0", output: "file data" }];
-    const response = await post(h.baseUrlFor("codex"), credential("codex"), { model: "gpt-test", stream: true, store: true, input, tools: [{ type: "function", name: "read_file" }] });
-    expect(response.status).toBe(200);
-    const text = await response.text();
-    const terminal = JSON.parse(text.trim().split("\n\n").at(-1)!.slice(6));
-    expect(terminal.response.output).toEqual([output]);
-    expect(seen.url).toBe("https://chatgpt.com/backend-api/codex/responses");
-    expect(seen.init.headers.authorization).toBe("Bearer private-oauth-access");
-    expect(seen.init.headers["chatgpt-account-id"]).toBe("account-123");
-    const body = JSON.parse(seen.init.body);
-    expect(body.store).toBe(false);
-    expect(body.input[0].content[0].type).toBe("output_text");
-    expect(body.input[1]).toEqual(input[1]);
-    expect(body.tools[0].name).toBe("read_file");
-    expect(text).not.toContain("private-oauth");
-  });
-
-  it("Codex collects a native JSON response for non-stream callers", async () => {
-    const h = await startWith({ open: false, oauth: async () => tokens, fetchImpl: (async () => new Response(sse, { headers: { "content-type": "text/event-stream" } })) as typeof fetch });
-    const response = await post(h.baseUrlFor("codex"), credential("codex"), { model: "gpt-test", stream: false, input: [] });
-    expect(response.headers.get("content-type")).toContain("application/json");
-    expect(await response.json()).toMatchObject({ id: "response-1", output: [output] });
-  });
-
   it("Grok forwards tools and tool messages with subscription headers", async () => {
     let seen: any;
     const h = await startWith({ open: false, oauth: async () => tokens, fetchImpl: (async (url, init) => {
@@ -139,7 +106,9 @@ describe("OAuth native transports", () => {
     const body = { model: "grok-test", messages: [{ role: "tool", tool_call_id: "c1", content: "result" }], tools: [{ type: "function", function: { name: "test" } }] };
     expect((await post(h.baseUrlFor("grok"), credential("grok"), body, "/chat/completions")).status).toBe(200);
     expect(seen.url).toBe("https://api.x.ai/v1/chat/completions");
-    expect(seen.init.headers["x-xai-token-auth"]).toBe("xai-grok-cli");
+    // 不伪装官方 CLI：UA 自报家门，且不得再出现 grok-cli 伪装头
+    expect(seen.init.headers["user-agent"]).toContain("astral-relay");
+    expect(JSON.stringify(seen.init.headers)).not.toContain("grok-cli");
     expect(JSON.parse(seen.init.body.toString())).toEqual(body);
   });
 
@@ -158,10 +127,11 @@ describe("OAuth native transports", () => {
     } finally { finish?.(); }
   });
 
-  it("rejects wrong protocol and disconnected OAuth without any upstream call", async () => {
+  it("未连接 OAuth 时直接 503，不发任何上游请求", async () => {
+    // 注：移除 Codex 后，protocol 不匹配的 400 分支在 server.ts 里已无厂商可覆盖
+    //（Grok 是唯一 OAuth 厂商且 protocol 为 openai）。该分支仍保留给将来的 responses 厂商。
     const h = await startWith({ open: false });
-    expect((await call(h.baseUrlFor("codex"), credential("codex"))).status).toBe(400);
-    expect((await post(h.baseUrlFor("codex"), credential("codex"), {})).status).toBe(503);
+    expect((await post(h.baseUrlFor("grok"), credential("grok"), {}, "/chat/completions")).status).toBe(503);
   });
 });
 

@@ -2,7 +2,7 @@
  * 订阅厂商目录。
  *
  * 同时记录套餐范围与技术接入方式。OAuth 兼容接入不等于厂商公开 API 保证；
- * Codex / Grok 参考 subscription-oauth 1.2.7，插件支持全部 Cyrene 模式。
+ * Grok 走 xAI 共享 OAuth 客户端（xAI 文档明示第三方工具可用订阅额度），支持全部 Cyrene 模式。
  *
  * kind 决定闸门是否介入：
  *  - "general"      插件不增加模式限制，全模式可用；不代表厂商公开 API 保证；
@@ -11,6 +11,8 @@
  *  - "agent-cli"    需要驱动厂商自己的本地 CLI（不是 HTTP 直连），当前未实现。
  *
  * 明确不收录，且不接受 PR 添加：
+ *  - ChatGPT / Codex 订阅 —— chatgpt.com/backend-api/codex 是私有后端，没有面向第三方的公开契约
+ *    （openai/codex#36886 至今无官方答复）；需要 Codex 时请改用宿主 MCP 接入本机 codex CLI；
  *  - Z.ai GLM Coding Plan —— 条款点名禁止用于「自有应用、机器人、网站、SaaS」，
  *    且支持工具是封闭列表，Cyrene 不在其中；
  *  - Anthropic Claude 订阅 —— 第三方产品不得提供 claude.ai 登录或额度；
@@ -45,12 +47,6 @@ export interface ProviderSpec {
 }
 
 export const PROVIDERS: readonly ProviderSpec[] = [
-  {
-    id: "codex", label: "OpenAI Codex（ChatGPT 订阅）", kind: "general", available: true,
-    auth: "oauth", protocol: "responses", baseUrl: "https://chatgpt.com/backend-api/codex",
-    termsUrl: "https://developers.openai.com/codex/auth/",
-    note: "使用 ChatGPT OAuth 连接 Codex；支持 Chat、Work、Learn、Code 全模式。采用订阅客户端兼容端点，接口变更可能需要更新插件。",
-  },
   {
     id: "grok", label: "xAI Grok（订阅 OAuth）", kind: "general", available: true,
     auth: "oauth", protocol: "openai", baseUrl: "https://api.x.ai/v1",

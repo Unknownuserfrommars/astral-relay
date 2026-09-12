@@ -20,9 +20,8 @@ import { readRelayContext } from "../core/request-auth";
 import { electronFetch } from "../network";
 import { isOAuthProvider, type OAuthProviderId } from "../oauth/specs";
 import type { OAuthTokens } from "../oauth/manager";
-import { codexBody, oauthHeaders } from "../oauth/upstream";
-import { createResponsesRepair } from "./responses";
-import { Readable, Writable } from "node:stream";
+import { oauthHeaders } from "../oauth/upstream";
+import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 /** 请求体上限，防跑飞的 prompt 把主进程内存吃掉。 */
@@ -188,7 +187,6 @@ async function handle(req: IncomingMessage, res: ServerResponse, token: string, 
     abort.signal.throwIfAborted();
     let headers: Record<string, string>;
     let requestBody: string | Buffer = body;
-    let collectCodex = false;
     if (isOAuthProvider(provider.id)) {
       let parsed: Record<string, unknown>;
       try {
@@ -198,10 +196,6 @@ async function handle(req: IncomingMessage, res: ServerResponse, token: string, 
       const tokens = await deps.getOAuthTokens?.(provider.id);
       if (!tokens) { sendError(res, 503, `星驿：请打开面板连接 ${provider.label}。`); return; }
       headers = oauthHeaders(provider.id, tokens);
-      if (provider.id === "codex") {
-        collectCodex = parsed.stream !== true;
-        requestBody = JSON.stringify(codexBody(parsed));
-      }
     } else {
       const key = await getKey(provider.id);
       if (!key) { sendError(res, 503, `星驿：尚未填写 ${provider.label} 的订阅 Key。`); return; }
@@ -213,7 +207,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, token: string, 
       headers: {
         ...headers,
         "content-type": "application/json",
-        accept: provider.id === "codex" ? "text/event-stream" : req.headers.accept ?? "application/json",
+        accept: req.headers.accept ?? "application/json",
       },
       body: requestBody,
       signal: abort.signal,
@@ -225,28 +219,13 @@ async function handle(req: IncomingMessage, res: ServerResponse, token: string, 
       sendError(res, upstream.status, `星驿：${provider.label} 返回 HTTP ${upstream.status}。${upstream.status === 401 ? "请重新连接订阅。" : "请检查模型与订阅额度。"}`);
       return;
     }
-    if (provider.id === "codex" && (!upstream.body || !upstream.headers.get("content-type")?.includes("text/event-stream"))) {
-      await upstream.body?.cancel();
-      sendError(res, 502, "星驿：Codex 未返回有效 Responses 事件流。");
-      return;
-    }
-    if (collectCodex) {
-      let terminal: Record<string, unknown> | undefined;
-      await pipeline(Readable.fromWeb(upstream.body! as never), createResponsesRepair((value) => { terminal = value; }),
-        new Writable({ write(_chunk, _encoding, done) { done(); } }), { signal: abort.signal });
-      if (!terminal) { sendError(res, 502, "星驿：Codex 事件流缺少最终响应。"); return; }
-      if (terminal.status === "failed") { sendError(res, 502, "星驿：Codex 请求失败，请检查模型和订阅额度。"); return; }
-      sendJson(res, upstream.status, terminal);
-      return;
-    }
     res.writeHead(upstream.status, {
       "content-type": upstream.headers.get("content-type") ?? "application/json",
       "cache-control": "no-store",
     });
     if (!upstream.body) { res.end(); return; }
     const stream = Readable.fromWeb(upstream.body as never);
-    if (provider.id === "codex") await pipeline(stream, createResponsesRepair(), res, { signal: abort.signal });
-    else await pipeline(stream, res, { signal: abort.signal });
+    await pipeline(stream, res, { signal: abort.signal });
   } catch {
     log.warn(`上游请求失败（${provider.id}）`);
     if (res.destroyed) return;
