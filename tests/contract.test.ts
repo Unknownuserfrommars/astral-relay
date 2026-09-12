@@ -5,13 +5,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { createMockContext } from "./helpers";
 
 /** 产物路径：vitest 工作目录 = 项目根。 */
-const BUILT_ENTRY = path.resolve(process.cwd(), "dist/plugin/coding-plan-gate/index.cjs");
+const BUILT_ENTRY = path.resolve(process.cwd(), "dist/plugin/astral-relay/index.cjs");
 
 /** 直接加载构建产物做契约测试——测的就是要发布的东西。 */
 function loadPlugin(): { register: (ctx: unknown) => Promise<void>; unregister: () => Promise<void> } {
   expect(existsSync(BUILT_ENTRY), "产物不存在，先运行 npm run build").toBe(true);
   const require = createRequire(path.join(process.cwd(), "package.json"));
-  return require("./dist/plugin/coding-plan-gate/index.cjs");
+  return require("./dist/plugin/astral-relay/index.cjs");
 }
 
 describe("插件契约（构建产物）", () => {
@@ -27,7 +27,7 @@ describe("插件契约（构建产物）", () => {
 
     expect(ctx.promptProviders).toHaveLength(1);
     const provider = ctx.promptProviders[0];
-    // 这三条是整个插件的合规基础，任何一条被改掉都必须让测试红
+    // These filters affect only the panel activity indicator, not authorization.
     expect(provider.modes).toEqual(["code"]);
     expect(provider.sources).toEqual(["conversation"]);
     expect(typeof provider.provide).toBe("function");
@@ -58,17 +58,61 @@ describe("插件契约（构建产物）", () => {
     await ctx.dispose();
   });
 
+  it("get-state 列出全部厂商，并标出各自 kind 与可用性", async () => {
+    const ctx = createMockContext();
+    await plugin.register(ctx);
+    const state = (await ctx.ipcChannels.get("get-state")!()) as {
+      providers: Array<{ id: string; kind: string; available: boolean; baseUrl: string }>;
+    };
+    const byId = Object.fromEntries(state.providers.map((p) => [p.id, p]));
+    expect(byId.qwen.kind).toBe("coding-only");
+    expect(byId.minimax.kind).toBe("general");
+    expect(byId.copilot.available).toBe(false);
+    // 未启用的厂商不给 baseUrl，免得用户填进档案后一直 404
+    expect(byId.copilot.baseUrl).toBe("");
+    expect(byId.qwen.baseUrl).toContain("/p/qwen/v1");
+    await ctx.dispose();
+  });
+
   it("get-state 不回传订阅 Key 本身，只回传是否已配置", async () => {
     const ctx = createMockContext();
     await plugin.register(ctx);
-    ctx.ipcChannels.get("save-config")!({ planId: "qwen" });
-    await ctx.ipcChannels.get("save-key")!({ planId: "qwen", key: "sk-sp-super-secret" });
+    await ctx.ipcChannels.get("save-key")!({ providerId: "qwen", key: "sk-sp-super-secret" });
 
     const state = (await ctx.ipcChannels.get("get-state")!()) as Record<string, unknown>;
-    expect(state.keyConfigured).toBe(true);
     // 整个状态对象里不允许出现 Key 的任何片段
     expect(JSON.stringify(state)).not.toContain("super-secret");
+    const providers = (state.providers as Array<{ id: string; keyConfigured: boolean }>);
+    expect(providers.find((p) => p.id === "qwen")!.keyConfigured).toBe(true);
     await ctx.dispose();
+  });
+
+  it("拒绝给未实现的厂商存 Key", async () => {
+    const ctx = createMockContext();
+    await plugin.register(ctx);
+    const result = (await ctx.ipcChannels.get("save-key")!({
+      providerId: "copilot",
+      key: "whatever",
+    })) as { ok: boolean };
+    expect(result.ok).toBe(false);
+    await ctx.dispose();
+  });
+
+  it("OAuth 通过专用 IPC 连接，面板状态不暴露 token 或账号", async () => {
+    const ctx = createMockContext();
+    ctx.secretStore.set("astral_relay_oauth_codex", JSON.stringify({ accessToken: "private-access", refreshToken: "private-refresh", accountId: "private-account", expiresAt: Date.now() + 3600000 }));
+    await plugin.register(ctx);
+    try {
+      for (const name of ["oauth-login", "oauth-cancel", "oauth-logout", "oauth-models"]) expect(ctx.ipcChannels.has(name)).toBe(true);
+      const state = await ctx.ipcChannels.get("get-state")!() as any;
+      const codex = state.providers.find((p: any) => p.id === "codex");
+      expect(codex).toMatchObject({ auth: "oauth", protocol: "responses", oauth: { connected: true } });
+      expect(JSON.stringify(state)).not.toContain("private-");
+      expect(await ctx.ipcChannels.get("save-key")!({ providerId: "codex", key: "wrong" })).toMatchObject({ ok: false });
+      expect(await ctx.ipcChannels.get("oauth-login")!("claude")).toMatchObject({ ok: false });
+      await ctx.ipcChannels.get("oauth-logout")!("codex");
+      expect(ctx.secretStore.has("astral_relay_oauth_codex")).toBe(false);
+    } finally { await ctx.dispose(); }
   });
 
   it("闸门初始为关闭：启用插件不等于开窗", async () => {

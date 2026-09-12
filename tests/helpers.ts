@@ -12,7 +12,7 @@ export interface MockContext extends PluginContext {
 
 /** 插件契约测试用的最小 PluginContext 假实现。 */
 export function createMockContext(options: { pluginId?: string; withSecrets?: boolean } = {}): MockContext {
-  const id = options.pluginId ?? "coding-plan-gate";
+  const id = options.pluginId ?? "astral-relay";
   const controller = new AbortController();
   const promptProviders: PluginPromptProvider[] = [];
   const ipcChannels = new Map<string, (...args: unknown[]) => unknown>();

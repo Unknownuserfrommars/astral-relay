@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 本地部署：把构建产物拷贝到本机 Cyrene 用户插件目录。
- * 默认路径：%APPDATA%/live2d-cyrene/plugins/coding-plan-gate/
+ * 默认路径：%APPDATA%/live2d-cyrene/plugins/astral-relay/
  * Cyrene 正在运行时需手动在插件面板点「刷新插件」。
  */
 import { cp, mkdir } from "node:fs/promises";
@@ -11,11 +11,11 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const BUILT_PLUGIN = path.join(ROOT, "dist", "plugin", "coding-plan-gate");
+const BUILT_PLUGIN = path.join(ROOT, "dist", "plugin", "astral-relay");
 
 function targetDir() {
   const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
-  return path.join(appData, "live2d-cyrene", "plugins", "coding-plan-gate");
+  return path.join(appData, "live2d-cyrene", "plugins", "astral-relay");
 }
 
 async function main() {

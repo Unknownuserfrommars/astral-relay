@@ -1,9 +1,9 @@
 {
   "apiVersion": 1,
-  "id": "coding-plan-gate",
-  "name": "编程套餐直通",
-  "version": "0.1.0",
-  "description": "用自己的编程套餐订阅（通义千问 / 腾讯云 / MiniMax）驱动 Cyrene，严格限定在 Code 模式的交互式对话，定时任务与其它模式一律拒绝。",
+  "id": "astral-relay",
+  "name": "星驿 · Astral Relay BYOS",
+  "version": "0.3.1",
+  "description": "BYOS 中转站：用你自己的订阅额度驱动 Cyrene。按厂商条款分类放行——编程套餐只在 Code 模式的交互式对话里生效，通用套餐全模式可用。",
   "author": "Unknownuserfrommars",
   "entry": "index.cjs",
   "defaultEnabled": false,

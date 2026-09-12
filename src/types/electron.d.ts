@@ -3,6 +3,8 @@
  * 不把 electron 安装为依赖。真实 API 以运行时为准。
  */
 declare module "electron" {
+  export const net: { fetch: typeof fetch };
+  export const shell: { openExternal(url: string): Promise<void> };
   export interface BrowserWindowConstructorOptions {
     width?: number;
     height?: number;
@@ -18,6 +20,10 @@ declare module "electron" {
   }
 
   export class BrowserWindow {
+    webContents: {
+      setWindowOpenHandler(handler: (details: { url: string }) => { action: "deny" }): void;
+      on(event: string, listener: (event: { preventDefault(): void }) => void): void;
+    };
     constructor(opts?: BrowserWindowConstructorOptions);
     loadFile(path: string): Promise<void>;
     focus(): void;

@@ -42,12 +42,12 @@ jobs:
       - name: Package plugin ZIP
         run: |
           cd dist/plugin
-          zip -r "../coding-plan-gate-${GITHUB_REF_NAME}.zip" coding-plan-gate
+          zip -r "../astral-relay-${GITHUB_REF_NAME}.zip" astral-relay
           cd ../..
-          unzip -l "dist/coding-plan-gate-${GITHUB_REF_NAME}.zip"
+          unzip -l "dist/astral-relay-${GITHUB_REF_NAME}.zip"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/coding-plan-gate-*.zip
+          files: dist/astral-relay-*.zip
           generate_release_notes: true

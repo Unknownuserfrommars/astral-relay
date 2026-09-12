@@ -1,6 +1,7 @@
 import type { PluginContext } from "../types/cyrene";
 import type { BrowserWindow } from "electron";
 import type { Logger } from "../logger";
+import { PROVIDERS } from "../core/providers";
 
 type ElectronMainModule = typeof import("electron");
 
@@ -9,7 +10,7 @@ export interface WindowManager {
   close(): void;
 }
 
-const WINDOW_TITLE = "编程套餐直通";
+const WINDOW_TITLE = "星驿 · Astral Relay";
 const WINDOW_WIDTH = 760;
 const WINDOW_HEIGHT = 640;
 
@@ -62,6 +63,13 @@ export function createWindowManager(deps: { log: Logger }): WindowManager {
         // 面板是随插件分发的受信静态页，panel.js 直接用 ipcRenderer。
         webPreferences: { nodeIntegration: true, contextIsolation: false },
       });
+      // Documentation belongs in the system browser, never in a Node-enabled plugin window.
+      const documentationUrls = new Set(PROVIDERS.map((provider) => provider.termsUrl));
+      created.webContents.setWindowOpenHandler(({ url }) => {
+        if (documentationUrls.has(url)) void electron.shell.openExternal(url).catch(() => log.warn("无法打开文档链接"));
+        return { action: "deny" };
+      });
+      created.webContents.on("will-navigate", (event) => event.preventDefault());
       created.on("closed", () => {
         if (win === created) win = null;
       });

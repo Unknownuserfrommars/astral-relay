@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 构建脚本：把 TypeScript 源码打包成单个 index.cjs，并把 manifest 与面板一起放进
- * dist/plugin/coding-plan-gate/。产物可直接压缩成 Cyrene 插件 ZIP。
+ * dist/plugin/astral-relay/。产物可直接压缩成 Cyrene 插件 ZIP。
  */
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -11,7 +11,7 @@ import esbuild from "esbuild";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const PLUGIN_DIR = path.join(ROOT, "dist", "plugin", "coding-plan-gate");
+const PLUGIN_DIR = path.join(ROOT, "dist", "plugin", "astral-relay");
 const SRC_DIR = path.join(ROOT, "src");
 const MANIFEST_PATH = path.join(ROOT, "manifest.json");
 const SOURCE_HASH_PATH = path.join(ROOT, "dist", ".source-hash");
@@ -55,7 +55,7 @@ async function copyPanelAssets() {
 }
 
 async function main() {
-  console.log("[build] 开始构建 coding-plan-gate...");
+  console.log("[build] 开始构建 astral-relay...");
   await rm(PLUGIN_DIR, { recursive: true, force: true });
   await mkdir(PLUGIN_DIR, { recursive: true });
 
@@ -74,6 +74,7 @@ async function main() {
   });
 
   await copyFile(MANIFEST_PATH, path.join(PLUGIN_DIR, "manifest.json"));
+  await copyFile(path.join(ROOT, "THIRD_PARTY_NOTICES.md"), path.join(PLUGIN_DIR, "THIRD_PARTY_NOTICES.md"));
   await copyPanelAssets();
 
   const hash = await computeSourceHash();

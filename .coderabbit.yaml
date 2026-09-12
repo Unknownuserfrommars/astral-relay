@@ -13,15 +13,17 @@ reviews:
     - path: "src/**"
       instructions: |
         以下是本仓库的硬性规则，违反时请明确指出：
-        - 闸门是本插件存在的唯一理由：任何绕过 gate.check 的转发路径都必须拒绝合并
+        - 闸门是本插件存在的理由：任何绕过 gate.check 的转发路径都必须拒绝合并
         - prompt provider 的 modes:["code"] 与 sources:["conversation"] 不得放宽，
-          放宽等于把套餐 Key 暴露给定时任务/发帖等非交互场景，违反厂商条款
+          放宽等于把编程套餐 Key 暴露给定时任务/发帖等非交互场景，违反厂商条款
+        - kind 的判定必须有条款依据：把 coding-only 改成 general 等于取消该厂商的
+          全部约束，必须在 PR 里贴出厂商原文
         - 订阅 Key 只经 ctx.deps.secrets 存取，绝不进日志、绝不进 IPC 返回值
-        - core/plans.ts 新增套餐必须附厂商条款链接，且条款须允许第三方编程工具；
-          Z.ai / Anthropic / OpenAI 订阅明确不得加入
+        - core/providers.ts 新增厂商必须附条款链接，且条款须允许第三方工具复用订阅额度；
+          Z.ai / Anthropic / OpenAI / Google 明确不得加入
         - 零运行时依赖：禁止引入第三方运行时包（Node 内置 + 宿主注入服务除外）
         - electron 只允许在 src/ui/ 内懒加载 require
-        - 面板渲染只允许 textContent，不得插值进 innerHTML
+        - 面板渲染只允许 textContent，不得拼接 innerHTML
     - path: "tests/**"
       instructions: |
         - 闸门与代理的拒绝路径必须有测试；放宽任何边界都要先改测试，让 review 看得见

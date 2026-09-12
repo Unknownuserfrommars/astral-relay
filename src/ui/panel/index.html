@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <title>编程套餐直通</title>
+  <title>星驿 · Astral Relay</title>
   <style>
     :root {
       color-scheme: light;
@@ -13,6 +13,7 @@
       --warn: #b8860b;
     }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body {
       margin: 0;
       padding: 20px;
@@ -22,8 +23,8 @@
       min-height: 100vh;
       font-size: 13px;
     }
-    h1 { font-size: 16px; margin: 0 0 4px; color: var(--pink); }
-    .sub { color: var(--ink-soft); margin-bottom: 16px; font-size: 12px; }
+    h1 { font-size: 17px; margin: 0 0 4px; color: var(--pink); }
+    .sub { color: var(--ink-soft); margin-bottom: 16px; font-size: 12px; line-height: 1.7; }
     section {
       background: #fff;
       border: 1px solid var(--line);
@@ -31,16 +32,17 @@
       padding: 14px 16px;
       margin-bottom: 12px;
     }
-    h2 { font-size: 13px; margin: 0 0 10px; }
-    label { display: block; margin-bottom: 4px; color: var(--ink-soft); font-size: 12px; }
-    select, input[type="text"], input[type="password"], input[type="number"] {
+    section.disabled { opacity: 0.55; }
+    .head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    h2 { font-size: 13px; margin: 0; }
+    label { display: block; margin: 8px 0 4px; color: var(--ink-soft); font-size: 12px; }
+    select, input[type="password"], input[type="number"] {
       width: 100%;
       padding: 7px 9px;
       border: 1px solid var(--line);
       border-radius: 8px;
       font-size: 13px;
       font-family: inherit;
-      margin-bottom: 10px;
     }
     button {
       padding: 6px 14px;
@@ -53,7 +55,7 @@
       margin-right: 6px;
     }
     button.ghost { background: #fff; color: var(--ink); }
-    .row { display: flex; align-items: center; gap: 8px; }
+    .row { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
     .badge {
       display: inline-block;
       padding: 2px 8px;
@@ -64,7 +66,9 @@
     }
     .badge.on { background: #e6f6ea; color: #2e7d32; }
     .badge.off { background: #fdecea; color: #c62828; }
+    .badge.warn { background: #fff6e0; color: var(--warn); }
     code {
+      white-space: pre-wrap;
       display: block;
       background: #faf3f7;
       border: 1px solid var(--line);
@@ -72,59 +76,44 @@
       padding: 7px 9px;
       font-size: 12px;
       word-break: break-all;
-      margin-bottom: 8px;
     }
-    .note { color: var(--ink-soft); font-size: 11px; line-height: 1.7; }
-    .warn { color: var(--warn); font-size: 11px; line-height: 1.7; }
+    .note { color: var(--ink-soft); font-size: 11px; line-height: 1.7; margin: 4px 0; }
+    .warn-box { color: var(--warn); font-size: 11px; line-height: 1.7; }
     a { color: var(--pink); }
   </style>
 </head>
 <body>
-  <h1>编程套餐直通</h1>
-  <div class="sub">用自己的编程套餐订阅驱动 Cyrene，仅限 Code 模式的交互式对话。</div>
+  <h1>星驿 · Astral Relay</h1>
+  <div class="sub">
+    用你自己的订阅额度驱动 Cyrene。按套餐和接入方式标明可用模式。
+    Codex / Grok 通过浏览器连接；其它套餐填写订阅 Key。
+  </div>
 
   <section>
-    <h2>闸门状态 <span id="gate-badge" class="badge">读取中…</span></h2>
+    <div class="head">
+      <h2>Code 活动状态（仅供参考）</h2>
+      <span id="gate-badge" class="badge">读取中…</span>
+    </div>
     <div class="note" id="gate-note">
-      闸门只在 Code 模式的交互轮次开启。定时任务、朋友圈发帖与其它模式一律拒绝——
-      这是编程套餐条款的要求，不是功能缺失。
+      编程套餐逐请求验证宿主签名的模式凭据，仅允许 Code 交互式会话。
+      Chat、Work、Learn、定时任务及无模式凭据的请求均被拒绝；通用套餐支持全模式。
+      上方活动状态不参与请求放行。
     </div>
   </section>
 
-  <section>
-    <h2>套餐</h2>
-    <label for="plan">选择套餐</label>
-    <select id="plan"></select>
-    <label for="key">订阅 Key（只写入宿主安全存储，不落明文）</label>
-    <input type="password" id="key" placeholder="留空则不修改已保存的 Key" autocomplete="off" />
-    <div class="row">
-      <button id="save-key">保存 Key</button>
-      <button id="clear-key" class="ghost">清除 Key</button>
-      <span id="key-state" class="badge">—</span>
-    </div>
-    <div class="note" id="terms" style="margin-top:10px"></div>
-  </section>
+  <div id="providers"></div>
 
   <section>
-    <h2>模型档案填这两项</h2>
-    <label>Base URL</label>
-    <code id="base-url">代理未运行</code>
-    <label>API Key（填这个 token，不是你的订阅 Key）</label>
-    <code id="token">—</code>
-    <div class="note">
-      token 每次启动随机生成，重启 Cyrene 后需要重新填。协议选 OpenAI 兼容。
-    </div>
-  </section>
-
-  <section>
-    <h2>高级</h2>
-    <label for="ttl">开窗存活上限（毫秒，10000–600000）</label>
+    <div class="head"><h2>通用设置</h2></div>
+    <label for="ttl">活动指示器保留时间（毫秒；重新启用插件后生效，不影响授权）</label>
     <input type="number" id="ttl" min="10000" max="600000" step="1000" />
-    <button id="save-config">保存</button>
-    <div class="warn" style="margin-top:10px">
-      已知边界：闸门是时间窗，不是逐请求绑定。宿主不会把轮次标识带进 HTTP 头，
-      所以开窗期间若你在另一个窗口用同一个档案发起 Chat 轮次，该请求也会被放行。
-      调小这个值可以缩小窗口，但消不掉。
+    <div class="row"><button id="save-ttl">保存</button></div>
+    <label>模型档案 API Key（所有厂商共用这一个 token，不是你的订阅 Key）</label>
+    <code id="token">—</code>
+    <div class="note">端口和 token 每次启用都重新生成，重启或重新启用后请重新复制 Base URL 和 token。</div>
+    <div class="warn-box" style="margin-top:10px">
+      编程套餐需要包含 Astral Relay 模式验证支持的 Cyrene 构建。
+      旧版宿主会收到 403 错误；通用套餐仍可使用。连接测试没有 Code 轮次凭据，也会被拒绝。
     </div>
   </section>
 

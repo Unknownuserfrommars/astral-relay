@@ -1,12 +1,13 @@
 import type { CyrenePlugin, PluginContext, PluginTurnFinishedEvent } from "./types/cyrene";
-import { loadConfig } from "./config";
+import { loadConfig, regionOf } from "./config";
 import { createGate, type Gate } from "./core/gate";
-import { findPlan, secretKeyOf, type PlanSpec } from "./core/plans";
+import { findProvider, resolveBaseUrl, secretKeyOf, type ProviderSpec } from "./core/providers";
 import { startProxy, type ProxyHandle } from "./proxy/server";
 import { registerUiIpc } from "./ui/ipc";
 import { createWindowManager, type WindowManager } from "./ui/window";
 import { createLogger } from "./logger";
 import { randomBytes } from "node:crypto";
+import { createOAuthManager } from "./oauth/manager";
 
 /**
  * 模块级状态：宿主保证插件单实例，register 与 open/unregister
@@ -15,28 +16,26 @@ import { randomBytes } from "node:crypto";
 let activeCtx: PluginContext | null = null;
 let winManager: WindowManager | null = null;
 
-/** provider id：框架会补全为 plugin:coding-plan-gate:<id>。 */
+/** provider id：框架会补全为 plugin:astral-relay:<id>。 */
 const PROVIDER_ID = "code-mode-gate";
 
 const plugin: CyrenePlugin = {
   async register(ctx) {
     const log = createLogger(ctx);
-    const config = loadConfig(ctx.storage);
-    const gate: Gate = createGate({ ttlMs: config.windowTtlMs });
+    const gate: Gate = createGate({ ttlMs: loadConfig(ctx.storage).windowTtlMs });
 
     // token 每次启动随机生成：写死等于没有 token。
-    const token = randomBytes(24).toString("hex");
+    const token = "ar-secret-v1." + randomBytes(24).toString("hex");
+    const oauth = createOAuthManager({ secrets: ctx.deps.secrets, signal: ctx.signal });
 
-    const currentPlan = (): PlanSpec | null => {
-      const planId = loadConfig(ctx.storage).planId;
-      return planId ? (findPlan(planId) ?? null) : null;
-    };
+    const resolveUpstream = (provider: ProviderSpec): string | undefined =>
+      resolveBaseUrl(provider, regionOf(loadConfig(ctx.storage), provider.id));
 
-    const currentKey = async (): Promise<string | undefined> => {
-      const plan = currentPlan();
-      if (!plan || !ctx.deps.secrets) return undefined;
+    const getKey = async (providerId: string): Promise<string | undefined> => {
+      const provider = findProvider(providerId);
+      if (!provider || !ctx.deps.secrets) return undefined;
       try {
-        return await ctx.deps.secrets.get(secretKeyOf(plan.id));
+        return await ctx.deps.secrets.get(secretKeyOf(provider.id));
       } catch (err) {
         // 安全存储不可用（E_STORAGE_UNAVAILABLE）时降级为「未配置」，不抛。
         log.warn("读取订阅 Key 失败：", err instanceof Error ? err.message : String(err));
@@ -46,15 +45,15 @@ const plugin: CyrenePlugin = {
 
     let proxy: ProxyHandle | null = null;
     try {
-      proxy = await startProxy({ gate, getPlan: currentPlan, getKey: currentKey, log }, token);
-      log.log(`代理已启动：${proxy.baseUrl}`);
+      proxy = await startProxy({ gate, resolveUpstream, getKey, getOAuthTokens: (id) => oauth.getTokens(id), signal: ctx.signal, log }, token);
+      log.log(`代理已启动：127.0.0.1:${proxy.port}`);
     } catch (err) {
       // 起不来不阻断启用：面板会显示「代理未运行」，用户可停用再启用重试。
       log.error("代理启动失败：", err instanceof Error ? err.message : String(err));
     }
 
     /**
-     * 闸门的开窗点。
+     * 面板活动指示器的更新点，不参与代理授权。
      *
      * modes:["code"] + sources:["conversation"] 由宿主负责过滤——定时任务
      * （source:"scheduler"）与发帖决策（source:"moments-post"）根本不会调到这里，
@@ -67,8 +66,8 @@ const plugin: CyrenePlugin = {
       id: PROVIDER_ID,
       modes: ["code"],
       sources: ["conversation"],
-      provide: () => {
-        gate.open();
+      provide: (input) => {
+        if (!input.signal.aborted && input.mode === "code" && input.source === "conversation") gate.open();
         return "";
       },
     });
@@ -80,7 +79,7 @@ const plugin: CyrenePlugin = {
       gate.close();
     });
 
-    registerUiIpc(ctx, { gate, storage: ctx.storage, log, getProxy: () => proxy });
+    registerUiIpc(ctx, { gate, storage: ctx.storage, log, getProxy: () => proxy, oauth });
 
     winManager = createWindowManager({ log });
 
@@ -99,7 +98,7 @@ const plugin: CyrenePlugin = {
     });
 
     activeCtx = ctx;
-    log.log("已启用（闸门默认关闭，只有 Code 模式的交互轮次才会开窗）");
+    log.log("已启用（编程套餐逐请求验证 Code 会话凭据；通用 BYOS 全模式可用）");
   },
 
   async unregister() {

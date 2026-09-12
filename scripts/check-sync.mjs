@@ -13,7 +13,7 @@ const ROOT = path.resolve(__dirname, "..");
 const SRC_DIR = path.join(ROOT, "src");
 const MANIFEST_PATH = path.join(ROOT, "manifest.json");
 const SOURCE_HASH_PATH = path.join(ROOT, "dist", ".source-hash");
-const OUT_CJS = path.join(ROOT, "dist", "plugin", "coding-plan-gate", "index.cjs");
+const OUT_CJS = path.join(ROOT, "dist", "plugin", "astral-relay", "index.cjs");
 
 async function sha256File(filePath) {
   return createHash("sha256").update(await readFile(filePath)).digest("hex");
