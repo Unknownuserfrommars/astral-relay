@@ -6,6 +6,8 @@
 // 端点取自 xAI 自己发布的 OIDC discovery：https://auth.x.ai/.well-known/openid-configuration
 export type OAuthProviderId = "grok";
 export interface OAuthSpec {
+  /** 设备码端点；取自 xAI 发布的 OIDC discovery。 */
+  deviceCodeUrl: string;
   clientId: string;
   authorizeUrl: string;
   tokenUrl: string;
@@ -20,6 +22,7 @@ export const OAUTH_SPECS: Record<OAuthProviderId, OAuthSpec> = {
     clientId: "b1a00492-073a-47ea-816f-4c329264a828",
     authorizeUrl: "https://auth.x.ai/oauth2/authorize",
     tokenUrl: "https://auth.x.ai/oauth2/token",
+    deviceCodeUrl: "https://auth.x.ai/oauth2/device/code",
     port: 56121, redirectHost: "127.0.0.1", pathname: "/callback",
     // grok-cli:access 与 api:access 都在 discovery 的 scopes_supported 里，是公开广告的 scope。
     scopes: ["openid", "profile", "email", "offline_access", "grok-cli:access", "api:access"],
@@ -28,4 +31,5 @@ export const OAUTH_SPECS: Record<OAuthProviderId, OAuthSpec> = {
   },
 };
 export const isOAuthProvider = (id: string): id is OAuthProviderId => id === "grok";
+export const DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 export const redirectUri = (spec: OAuthSpec): string => `http://${spec.redirectHost}:${spec.port}${spec.pathname}`;

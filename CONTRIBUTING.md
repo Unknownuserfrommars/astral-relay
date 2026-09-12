@@ -41,7 +41,8 @@ npm run deploy     # 装到本机 Cyrene
 3. **改 `kind` 必须有条款依据。** 把 `coding-only` 改成 `general` 等于取消该厂商的
    全部约束，PR 里必须贴出厂商原文。
 4. **订阅 Key、OAuth token 与授权码不进日志、不进 IPC 返回值。** 所有出站 HTTP 使用 Electron `net.fetch()`。
-5. **新增厂商必须附接入依据并说明接口性质。** Codex / Grok OAuth 为兼容实现，不声称官方通用 API 保证。
+5. **新增厂商必须附接入依据并说明接口性质。** Grok OAuth 使用 xAI 共享客户端，端点取自其公开 OIDC discovery；
+   不接受把私有后端（如 chatgpt.com/backend-api/*）当作第三方接入面的 PR。
    Z.ai / Anthropic / Google 暂不收录，`tests/providers.test.ts` 覆盖目录边界。
 6. **零运行时依赖。** 面板渲染只允许 `textContent`。
 

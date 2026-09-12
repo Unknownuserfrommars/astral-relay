@@ -2,17 +2,33 @@ import { createHash, randomBytes } from "node:crypto";
 import type { PluginSecrets } from "../types/cyrene";
 import { electronFetch } from "../network";
 import { prepareCallback } from "./callback";
-import { OAUTH_SPECS, redirectUri, type OAuthProviderId } from "./specs";
+import { DEVICE_CODE_GRANT_TYPE, OAUTH_SPECS, redirectUri, type OAuthProviderId } from "./specs";
 
 export interface OAuthTokens { accessToken: string; refreshToken?: string; expiresAt: number }
+/** 设备码轮询节奏，遵循 RFC 8628：默认 5s，服务端要求 slow_down 时每次 +5s。 */
+const DEVICE_POLL_DEFAULT_MS = 5000;
+const DEVICE_POLL_MIN_MS = 1000;
+const DEVICE_SLOW_DOWN_STEP_MS = 5000;
+
+/** 面板展示用的设备码信息；verificationUriComplete 可直接打开，无需手输。 */
+export interface DevicePrompt {
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete?: string;
+  expiresAt: number;
+}
+
 export const oauthSecretKey = (id: OAuthProviderId): string => `astral_relay_oauth_${id}`;
 
 export function createOAuthManager(deps: {
   secrets?: PluginSecrets; signal: AbortSignal; fetchImpl?: typeof fetch;
   openExternal?: (url: string) => Promise<void>;
   callback?: typeof prepareCallback;
+  /** 测试注入点：设备码轮询的等待实现。生产用真实定时器。 */
+  sleep?: (ms: number) => Promise<void>;
 }) {
   const doFetch = deps.fetchImpl ?? electronFetch;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
   const active = new Map<OAuthProviderId, AbortController>();
   const generation = new Map<OAuthProviderId, number>();
   const refreshes = new Map<OAuthProviderId, Promise<OAuthTokens | undefined>>();
@@ -47,7 +63,14 @@ export function createOAuthManager(deps: {
         signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]), redirect: "error",
       });
     } catch { throw new Error("订阅授权网络请求失败或已取消，请重试"); }
-    if (!response.ok) { await response.body?.cancel(); throw new Error(`订阅授权失败（HTTP ${response.status}），请重新连接`); }
+    if (!response.ok) {
+      // 设备码轮询要靠 OAuth error 码区分「还没批准」与「真失败」，
+      // 所以这里读出 error 字段；只取错误码本身，不回显响应正文（可能含敏感信息）。
+      let code = "";
+      try { const body = await response.json() as Record<string, unknown>; if (typeof body.error === "string") code = body.error; }
+      catch { /* 非 JSON 错误体：按普通失败处理 */ }
+      throw new Error(code ? `订阅授权失败（${code}）` : `订阅授权失败（HTTP ${response.status}），请重新连接`);
+    }
     let json: Record<string, unknown>;
     try { json = await response.json() as Record<string, unknown>; } catch { throw new Error("订阅授权响应不是有效 JSON"); }
     if (!json || typeof json.access_token !== "string" || !json.access_token) throw new Error("订阅授权未返回访问凭据");
@@ -95,6 +118,77 @@ export function createOAuthManager(deps: {
         await save(id, tokens, version, signal);
       } finally {
         callback?.close();
+        if (active.get(id) === controller) active.delete(id);
+      }
+    },
+    /**
+     * 设备码登录（实验性）。
+     *
+     * 端点与 grant type 来自 xAI 自己发布的 OIDC discovery，不是从别人的构建里扒的常量。
+     * 但本机没有 SuperGrok / X Premium 账号可完成一次真实授权，因此这条路径
+     * 只有单元测试覆盖，没有端到端验证——面板上标注为实验性即为此意。
+     *
+     * 与 login() 并存而不是替换：login() 的回环回调流程有 7 条测试覆盖且能跑通，
+     * 用未经实测的实现去换掉能跑的实现是倒退。
+     */
+    async loginDevice(id: OAuthProviderId, onPrompt: (prompt: DevicePrompt) => void): Promise<void> {
+      secrets();
+      deps.signal.throwIfAborted();
+      if (active.has(id)) throw new Error("该订阅正在连接，请完成或取消当前登录");
+      const controller = new AbortController();
+      active.set(id, controller);
+      bump(id);
+      const version = current(id);
+      const signal = AbortSignal.any([deps.signal, controller.signal, AbortSignal.timeout(300000)]);
+      try {
+        const spec = OAUTH_SPECS[id];
+        let response: Response;
+        try {
+          response = await doFetch(spec.deviceCodeUrl, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+            body: new URLSearchParams({ client_id: spec.clientId, scope: spec.scopes.join(" ") }).toString(),
+            signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]),
+            redirect: "error",
+          });
+        } catch { throw new Error("设备码请求失败或已取消，请重试"); }
+        if (!response.ok) { await response.body?.cancel(); throw new Error(`设备码申请失败（HTTP ${response.status}）`); }
+        let json: Record<string, unknown>;
+        try { json = await response.json() as Record<string, unknown>; } catch { throw new Error("设备码响应不是有效 JSON"); }
+        const deviceCode = typeof json.device_code === "string" ? json.device_code : "";
+        const userCode = typeof json.user_code === "string" ? json.user_code : "";
+        const verificationUri = typeof json.verification_uri === "string" ? json.verification_uri : "";
+        if (!deviceCode || !userCode || !verificationUri) throw new Error("设备码响应缺少必要字段");
+        const lifetime = typeof json.expires_in === "number" && json.expires_in > 0 ? json.expires_in : 600;
+        onPrompt({
+          userCode,
+          verificationUri,
+          verificationUriComplete: typeof json.verification_uri_complete === "string" ? json.verification_uri_complete : undefined,
+          expiresAt: Date.now() + lifetime * 1000,
+        });
+
+        let intervalMs = typeof json.interval === "number" && json.interval > 0
+          ? Math.max(json.interval * 1000, DEVICE_POLL_MIN_MS)
+          : DEVICE_POLL_DEFAULT_MS;
+        const deadline = Date.now() + lifetime * 1000;
+        for (;;) {
+          signal.throwIfAborted();
+          if (Date.now() > deadline) throw new Error("设备码已过期，请重新连接");
+          await sleep(intervalMs);
+          signal.throwIfAborted();
+          try {
+            const tokens = await requestTokens(id, { grant_type: DEVICE_CODE_GRANT_TYPE, device_code: deviceCode }, signal);
+            await save(id, tokens, version, signal);
+            return;
+          } catch (error) {
+            // authorization_pending / slow_down 是正常轮询状态，不是失败。
+            const message = error instanceof Error ? error.message : String(error);
+            if (message.includes("slow_down")) { intervalMs += DEVICE_SLOW_DOWN_STEP_MS; continue; }
+            if (message.includes("authorization_pending")) continue;
+            throw error;
+          }
+        }
+      } finally {
         if (active.get(id) === controller) active.delete(id);
       }
     },

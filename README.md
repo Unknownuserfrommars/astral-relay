@@ -1,7 +1,7 @@
 <h1 align="center">星驿 · Astral Relay</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.3.1-ff69b4?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-0.4.0-ff69b4?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/TypeScript-strict-ff69b4?style=flat-square" alt="typescript">
   <img src="https://img.shields.io/badge/node-24%20LTS-ff69b4?style=flat-square" alt="node">
   <img src="https://img.shields.io/badge/platform-Cyrene%20Plugin%20API%20v1-ff69b4?style=flat-square" alt="platform">
@@ -11,15 +11,14 @@
 BYOS（Bring Your Own Subscription）中转站：用**你自己的订阅额度**驱动 Cyrene，
 不用再单独买按量付费额度。
 
-Codex、Grok 与 MiniMax 支持 Chat、Work、Learn、Code 全模式。
+Grok 与 MiniMax 支持 Chat、Work、Learn、Code 全模式。
 仅 Qwen / 腾讯 Coding Plan 限制为 Code 交互会话。技术兼容不等于厂商公开 API 保证。
 
 ## 支持的厂商
 
 | 厂商 | 放行范围 | 连接方式 | 参考文档 |
 |---|---|---|---|
-| OpenAI Codex（ChatGPT 订阅） | 全模式 | 浏览器 OAuth；Responses 协议 | [文档](https://developers.openai.com/codex/auth/) |
-| xAI Grok 订阅 | 全模式 | 浏览器 OAuth；OpenAI 兼容协议 | [文档](https://x.ai/news/grok-opencode) |
+| xAI Grok 订阅 | 全模式 · **实验性** | 浏览器 OAuth（回环回调 / 设备码）；OpenAI 兼容协议 | [文档](https://x.ai/news/grok-opencode) |
 | MiniMax Token Plan | 全模式 | `sk-cp-` | [文档](https://platform.minimax.io/docs/token-plan/intro) |
 | 通义千问 Coding Plan | 仅 Code 模式 | `sk-sp-` | [文档](https://help.aliyun.com/zh/model-studio/coding-plan) |
 | 腾讯云 Coding Plan | 仅 Code 模式 | `sk-sp-` | [文档](https://cloud.tencent.com/document/product/1823/130092) |
@@ -31,6 +30,7 @@ MiniMax 支持国际站与中国大陆双端点，在面板里切换。
 
 - **Z.ai GLM Coding Plan** —— 条款点名禁止用于「自有应用、机器人、网站、SaaS」，支持工具是封闭列表
 - **Anthropic Claude 订阅** —— 第三方产品不得提供 claude.ai 登录或额度
+- **ChatGPT / Codex 订阅** —— `chatgpt.com/backend-api/codex` 是私有后端，没有面向第三方的公开契约（[openai/codex#36886](https://github.com/openai/codex/issues/36886) 至今无官方答复）。**要用 Codex 并不需要本插件**：把本机已登录的 codex CLI 作为 MCP server 接进 Cyrene（`codex mcp-server`）即可，额度同样走你自己的 ChatGPT 订阅
 - **Google Gemini** —— 官方文档点名禁止第三方软件复用 Gemini CLI 的 OAuth
 
 ### 关于 GitHub Copilot
@@ -46,16 +46,20 @@ Copilot 是本目录里唯一「条款允许、但技术上还没做」的一个
 OAuth App 的 client id 与 secret。但本机没装 CLI，协议没法实测——
 不带未验证的实现上线，所以面板里先置灰。
 
-### Codex / Grok 接入
+### Grok 接入（实验性）
 
-实现参考 [subscription-oauth 1.2.7](https://github.com/1971687396/Cyrene-Plugins/tree/codex/subscription-oauth-1.2.7)，
-采用 PKCE 浏览器授权、仅本机回调和安全存储。支持取消登录、断开连接、到期自动刷新和读取模型目录；每家保存一个连接账号。
-所有出站 HTTP（授权换 token、刷新、模型目录、推理）统一使用 **Electron `net.fetch()`**，不回退到 Node 全局 fetch。
+采用 PKCE 浏览器授权、仅本机回调与安全存储，另提供设备码登录（RFC 8628）。
+支持取消登录、断开连接、到期自动刷新与读取模型目录。
+所有出站 HTTP 统一使用 **Electron `net.fetch()`**，不回退到 Node 全局 fetch。
 
-Codex 走 `chatgpt.com/backend-api/codex/responses`，Grok 走 `api.x.ai/v1/chat/completions`。
-保留工具调用和工具结果；Codex 会补齐部分事件流缺失的最终 output，非流式调用会收集为 Responses JSON。
-这是参考客户端的兼容实现，OAuth client ID 和订阅后端变更可能需要更新；不将其描述为官方通用 API。
-原实现归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+client id 与 scope 用的是 **xAI 的共享 OAuth 客户端**：xAI 明确支持第三方工具复用用户自己的
+SuperGrok / X Premium 订阅额度，且不提供第三方自建 client 的注册入口，共享客户端即官方路径。
+因此授权页可能显示 Grok Build，这是[有文档记载的已知行为](https://docs.openclaw.ai/providers/xai)。
+端点取自 xAI 自己发布的 [OIDC discovery](https://auth.x.ai/.well-known/openid-configuration)。
+
+**标为实验性的原因**：开发机没有 SuperGrok / X Premium 账号，无法完成一次真实授权。
+代码有单元测试覆盖（含设备码轮询、pending/slow_down 处理、取消与错误码不回显），
+但**没有端到端实测**。请求头如实标明 `astral-relay/0.4.0`，不伪装官方 CLI。
 
 ## 它怎么工作
 
@@ -79,16 +83,16 @@ npm run deploy   # 构建并拷贝到 %APPDATA%/live2d-cyrene/plugins/
 ```
 
 编程套餐需要包含配套模式验证支持的 Cyrene 构建，见 [宿主集成](docs/host-integration.md)。
-旧版宿主使用 Qwen / 腾讯 Coding Plan 会收到 403；Codex、Grok、MiniMax 不需要配套模式验证改动。开发环境已确认 Node 24.19.0。
+旧版宿主使用 Qwen / 腾讯 Coding Plan 会收到 403；Grok、MiniMax 不需要配套模式验证改动。开发环境已确认 Node 24.19.0。
 
 然后在 Cyrene 插件面板点「刷新插件」，手动启用，再点「Open / 打开」配置。
 
 ## 配置
 
-1. Codex / Grok 点击「连接订阅」并在浏览器授权；其它厂商填写订阅 Key。凭据仅写入宿主安全存储。
+1. Grok 点击「连接订阅」并在浏览器授权；其它厂商填写订阅 Key。凭据仅写入宿主安全存储。
 2. OAuth 连接后点击「读取模型」，复制需要的模型 ID。
-3. 把卡片的 **Base URL**、模型 ID 和底部 **token** 填进 Cyrene 模型档案。Codex 选择 **Responses**；其它已实现厂商选择 **OpenAI 兼容**。
-4. Codex / Grok / MiniMax 可在任意模式发消息测试；Qwen / 腾讯 Coding Plan 需在 Code 模式测试。
+3. 把卡片的 **Base URL**、模型 ID 和底部 **token** 填进 Cyrene 模型档案。所有已实现厂商均选择 **OpenAI 兼容**。
+4. Grok / MiniMax 可在任意模式发消息测试；Qwen / 腾讯 Coding Plan 需在 Code 模式测试。
 5. Base URL 端口和 token 每次启用都重新生成，重启或重新启用后都需要重新复制。
 
 ## 已知限制
@@ -97,7 +101,8 @@ npm run deploy   # 构建并拷贝到 %APPDATA%/live2d-cyrene/plugins/
 - 模型档案的「连接测试」没有 Code 轮次凭据，编程套餐会拒绝；请在 Code 模式发消息测试。
 - 本轮凭据最长有效 24 小时，超过后需开始新轮次；插件重启会使旧凭据失效。
 - 凭据允许有效期内重试和工具续轮，不隔离持有本地 token 的恶意程序。
-- 已通过 Electron 面板与 `net.fetch()` 本机 smoke test；真实账号的 OAuth 授权与推理尚需订阅账号验证。
+- Grok 标为实验性：单元测试覆盖完整，但没有真实订阅账号做过端到端授权与推理验证。
+- 移除 Codex 后，`server.ts` 里 protocol 不匹配的 400 分支暂无厂商覆盖（Grok 是唯一 OAuth 厂商且走 OpenAI 兼容），分支保留给将来的 responses 厂商。
 
 ## 免责
 

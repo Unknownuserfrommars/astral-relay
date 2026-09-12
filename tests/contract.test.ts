@@ -107,6 +107,10 @@ describe("插件契约（构建产物）", () => {
       const state = await ctx.ipcChannels.get("get-state")!() as any;
       const grok = state.providers.find((p: any) => p.id === "grok");
       expect(grok).toMatchObject({ auth: "oauth", protocol: "openai", oauth: { connected: true } });
+      // Grok 未经端到端实测，面板必须能看到实验性标记
+      expect(grok.experimental).toBe(true);
+      // 按量付费类厂商不得被误标为实验性
+      expect(state.providers.find((p: any) => p.id === "minimax").experimental).toBe(false);
       expect(JSON.stringify(state)).not.toContain("private-");
       expect(await ctx.ipcChannels.get("save-key")!({ providerId: "grok", key: "wrong" })).toMatchObject({ ok: false });
       expect(await ctx.ipcChannels.get("oauth-login")!("claude")).toMatchObject({ ok: false });

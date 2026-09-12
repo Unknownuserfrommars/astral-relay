@@ -3,6 +3,36 @@
 本插件遵循 [SemVer](https://semver.org/lang/zh-CN/)。版本号三段式由 `manifest.json`
 与 `package.json` 同步维护——发布前跑 `npm run check-sync` 防止产物静默失效。
 
+## [0.4.0] - 2026-09-12
+
+### 移除
+
+- **整体移除 Codex**。`chatgpt.com/backend-api/codex` 是私有后端，没有面向第三方的公开契约
+  （openai/codex#36886 至今无官方答复）。需要 Codex 的用户改用宿主 MCP 接入本机已登录的
+  `codex mcp-server`，额度同样走自己的 ChatGPT 订阅，不需要插件代劳。
+- 随之删除 `proxy/responses.ts`（Codex 专用 SSE 修复）及其测试。
+
+### 变更
+
+- Grok 的 `referrer="opencode"` 已删除：本插件不是 OpenCode，这是唯一真正失实的字段。
+- 上游 user-agent 改为 `astral-relay/0.4.0` 自报家门，不再伪装 `grok-build-cli`。
+- specs 端点改注为取自 xAI 自己发布的 OIDC discovery，而非从第三方构建中提取的常量。
+- Grok 标记为 **experimental**，面板显示实验性提示。
+
+### 新增
+
+- Grok 设备码登录（RFC 8628）：与原有回环回调流程**并存**而非替换，
+  因为回调流程有测试覆盖且可用，用未实测实现替换可用实现是倒退。
+- 设备码轮询遵循服务端 `interval`，正确处理 `authorization_pending` 与 `slow_down`；
+  token 端点错误只透出 OAuth 错误码，不回显响应正文。
+- 轮询等待可注入（`sleep` seam），测试不再空等（设备码用例 4193ms → 154ms）。
+
+### 已知代价
+
+- 随 Codex 一并删除的还有其工具续轮与非流式收集两条用例，那是能跑通的真实覆盖。
+- `server.ts` 中 protocol 不匹配的 400 分支目前无厂商可覆盖，保留给将来的 responses 厂商。
+- Grok 无端到端验证：开发机没有 SuperGrok / X Premium 账号。
+
 ## [0.3.1] - 2026-09-12
 
 - 移除 Codex / Grok 由插件额外施加的 Code-only 限制，支持 Chat / Work / Learn / Code

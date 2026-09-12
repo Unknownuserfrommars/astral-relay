@@ -27,7 +27,7 @@ Cyrene 插件运行在 **Electron 主进程，拥有完整 Node 权限**——�
 
 ## OAuth 凭据
 
-Codex 与 Grok 使用 PKCE + 随机 state，本地回调仅绑定 `127.0.0.1`，先监听再打开浏览器。
+Grok 使用 PKCE + 随机 state，本地回调仅绑定 `127.0.0.1`，先监听再打开浏览器；设备码流程不开本地端口。
 错误 state 不会结束有效登录，取消、5 分钟超时或插件停用会清理监听器。token 请求另有 30 秒超时。
 OAuth 凭据只存入宿主 `secrets`；安全存储不可用时拒绝连接，不回退到明文。
 面板仅获取 connected / connecting / expiresAt 状态，不获取 access token、refresh token、授权码或账号标识。

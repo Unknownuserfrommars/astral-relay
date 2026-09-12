@@ -85,6 +85,13 @@ function providerCard(p) {
     card.appendChild(select);
   }
 
+  if (p.experimental) {
+    // 实验性：实现完整但没有端到端实测过，必须让用户看见
+    const flag = document.createElement("p");
+    flag.className = "note";
+    flag.textContent = "实验性：该接入尚未经过端到端实测，失败请回退到按量付费档案。";
+    card.appendChild(flag);
+  }
   if (p.auth === "oauth") {
     const row = document.createElement("div");
     row.className = "row";

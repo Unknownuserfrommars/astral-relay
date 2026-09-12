@@ -31,6 +31,8 @@ export interface ProviderSpec {
   id: string;
   label: string;
   kind: ProviderKind;
+  /** 实验性：功能已实现但未经端到端实测，面板需明确标注。 */
+  experimental?: boolean;
   /** 可用性：false 表示目录里有定义但本版本不提供（面板置灰并说明原因）。 */
   available: boolean;
   auth?: "key" | "oauth";
@@ -48,7 +50,7 @@ export interface ProviderSpec {
 
 export const PROVIDERS: readonly ProviderSpec[] = [
   {
-    id: "grok", label: "xAI Grok（订阅 OAuth）", kind: "general", available: true,
+    id: "grok", label: "xAI Grok（订阅 OAuth）", kind: "general", available: true, experimental: true,
     auth: "oauth", protocol: "openai", baseUrl: "https://api.x.ai/v1",
     termsUrl: "https://x.ai/news/grok-opencode",
     note: "使用 Grok OAuth 连接订阅；支持 Chat、Work、Learn、Code 全模式。",

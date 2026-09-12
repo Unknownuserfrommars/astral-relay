@@ -53,6 +53,7 @@ export function registerUiIpc(ctx: PluginContext, deps: UiIpcDeps): void {
         label: provider.label,
         kind: provider.kind,
         available: provider.available,
+        experimental: provider.experimental === true,
         auth: provider.auth ?? "key",
         protocol: provider.protocol ?? "openai",
         oauth: oauthState,
