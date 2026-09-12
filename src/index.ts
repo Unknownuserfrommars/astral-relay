@@ -1,6 +1,8 @@
 import type { CyrenePlugin, PluginContext, PluginTurnFinishedEvent } from "./types/cyrene";
 import { loadConfig, regionOf } from "./config";
 import { createGate, type Gate } from "./core/gate";
+import { createTurnBinding, type TurnBinding } from "./core/turn-binding";
+import { createNonceStore } from "./core/request-auth";
 import { findProvider, resolveBaseUrl, secretKeyOf, type ProviderSpec } from "./core/providers";
 import { startProxy, type ProxyHandle } from "./proxy/server";
 import { registerUiIpc } from "./ui/ipc";
@@ -23,6 +25,9 @@ const plugin: CyrenePlugin = {
   async register(ctx) {
     const log = createLogger(ctx);
     const gate: Gate = createGate({ ttlMs: loadConfig(ctx.storage).windowTtlMs });
+    // 编程套餐的实际放行依据之一，与 gate 无关：gate 只是面板上的活动指示器。
+    const binding: TurnBinding = createTurnBinding();
+    const nonces = createNonceStore();
 
     // token 每次启动随机生成：写死等于没有 token。
     const token = "ar-secret-v1." + randomBytes(24).toString("hex");
@@ -45,7 +50,7 @@ const plugin: CyrenePlugin = {
 
     let proxy: ProxyHandle | null = null;
     try {
-      proxy = await startProxy({ gate, resolveUpstream, getKey, getOAuthTokens: (id) => oauth.getTokens(id), signal: ctx.signal, log }, token);
+      proxy = await startProxy({ gate, binding, nonces, resolveUpstream, getKey, getOAuthTokens: (id) => oauth.getTokens(id), signal: ctx.signal, log }, token);
       log.log(`代理已启动：127.0.0.1:${proxy.port}`);
     } catch (err) {
       // 起不来不阻断启用：面板会显示「代理未运行」，用户可停用再启用重试。
@@ -53,11 +58,13 @@ const plugin: CyrenePlugin = {
     }
 
     /**
-     * 面板活动指示器的更新点，不参与代理授权。
+     * 本轮信息的唯一入口，两个用途：登记 Code 轮次绑定（参与放行）、
+     * 更新面板活动指示器（不参与放行）。
      *
      * modes:["code"] + sources:["conversation"] 由宿主负责过滤——定时任务
-     * （source:"scheduler"）与发帖决策（source:"moments-post"）根本不会调到这里，
-     * 所以这个函数被调用本身就等价于「用户正在 Code 模式里交互」。
+     * （source:"scheduler"）与发帖决策（source:"moments-post"）根本不会调到这里。
+     * 即便如此仍然自己再核对一次 mode / source：过滤是宿主的实现细节，
+     * 放行条件不该整个押在别人身上。
      *
      * 返回空串：本插件不往提示词里塞任何东西，只借这个回调拿到「本轮是什么」。
      * 宿主对 Provider 有 2 秒上限，这里必须是同步的纯内存操作。
@@ -67,7 +74,10 @@ const plugin: CyrenePlugin = {
       modes: ["code"],
       sources: ["conversation"],
       provide: (input) => {
-        if (!input.signal.aborted && input.mode === "code" && input.source === "conversation") gate.open();
+        if (!input.signal.aborted && input.mode === "code" && input.source === "conversation") {
+          gate.open();
+          binding.register({ mode: input.mode, source: input.source, userText: input.userText });
+        }
         return "";
       },
     });
@@ -79,12 +89,14 @@ const plugin: CyrenePlugin = {
       gate.close();
     });
 
-    registerUiIpc(ctx, { gate, storage: ctx.storage, log, getProxy: () => proxy, oauth });
+    registerUiIpc(ctx, { gate, binding, storage: ctx.storage, log, getProxy: () => proxy, oauth });
 
     winManager = createWindowManager({ log });
 
     ctx.onDispose(async () => {
       gate.close();
+      // 停用即清空登记：停用后再启用会换新 token，旧绑定没有任何继续存在的理由。
+      binding.clear();
       winManager?.close();
       winManager = null;
       if (proxy) {
@@ -98,7 +110,7 @@ const plugin: CyrenePlugin = {
     });
 
     activeCtx = ctx;
-    log.log("已启用（编程套餐逐请求验证 Code 会话凭据；通用 BYOS 全模式可用）");
+    log.log("已启用（编程套餐按 Code 轮次绑定放行，无需宿主改动；通用 BYOS 全模式可用）");
   },
 
   async unregister() {

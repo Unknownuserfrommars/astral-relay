@@ -2,6 +2,7 @@ import type { PluginContext, PluginStorage } from "../types/cyrene";
 import { loadConfig, mergeConfigPatch, regionOf, saveConfig } from "../config";
 import { PROVIDERS, findProvider, resolveBaseUrl, secretKeyOf } from "../core/providers";
 import type { Gate } from "../core/gate";
+import { DEFAULT_BINDING_TTL_MS, type TurnBinding } from "../core/turn-binding";
 import type { ProxyHandle } from "../proxy/server";
 import type { Logger } from "../logger";
 import type { OAuthManager } from "../oauth/manager";
@@ -16,6 +17,7 @@ const OAUTH_CHANNELS = ["oauth-login", "oauth-cancel", "oauth-logout", "oauth-mo
 
 export interface UiIpcDeps {
   gate: Gate;
+  binding?: TurnBinding;
   storage: PluginStorage;
   log: Logger;
   getProxy: () => ProxyHandle | null;
@@ -72,6 +74,8 @@ export function registerUiIpc(ctx: PluginContext, deps: UiIpcDeps): void {
       providers,
       windowTtlMs: config.windowTtlMs,
       gate: gate.snapshot(),
+      // 只回传条目数量，不回传任何指纹或原文：面板不需要知道用户说了什么。
+      binding: { pending: deps.binding?.size() ?? 0, ttlMs: DEFAULT_BINDING_TTL_MS },
       proxy: proxy ? { port: proxy.port, token: proxy.token } : null,
     };
   };

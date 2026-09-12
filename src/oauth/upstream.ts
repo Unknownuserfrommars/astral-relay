@@ -11,7 +11,7 @@ import type { OAuthProviderId } from "./specs";
 export function oauthHeaders(_id: OAuthProviderId, tokens: OAuthTokens): Record<string, string> {
   return {
     authorization: `Bearer ${tokens.accessToken}`,
-    "user-agent": "astral-relay/0.4.0",
+    "user-agent": "astral-relay/0.5.0",
   };
 }
 

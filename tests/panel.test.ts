@@ -22,8 +22,8 @@ it("status polling preserves entered keys, focus targets and unsaved settings", 
   state.gate.open = true;
   const poll = context.setInterval.mock.calls[0][0];
   poll();
-  await vi.waitFor(() => expect(get("gate-badge").textContent).toBe("开窗中"));
+  await vi.waitFor(() => expect(get("gate-badge").textContent).toBe("活动中"));
   expect(get("providers").textContent).toBe("existing provider inputs");
   expect(get("ttl").value).toBe("45000");
-  expect(get("gate-badge").textContent).toBe("开窗中");
+  expect(get("gate-badge").textContent).toBe("活动中");
 });

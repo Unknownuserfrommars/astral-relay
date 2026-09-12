@@ -16,7 +16,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { constantTimeEquals, type Gate } from "../core/gate";
 import { findProvider, requiresCodeMode, type ProviderSpec } from "../core/providers";
 import type { Logger } from "../logger";
-import { readRelayContext } from "../core/request-auth";
+import { readRelayContext, type NonceStore } from "../core/request-auth";
+import { lastUserTexts, type TurnBinding } from "../core/turn-binding";
 import { electronFetch } from "../network";
 import { isOAuthProvider, type OAuthProviderId } from "../oauth/specs";
 import type { OAuthTokens } from "../oauth/manager";
@@ -40,6 +41,10 @@ export interface ProxyHandle {
 export interface ProxyDeps {
   /** Legacy activity indicator; deliberately not consulted for authorization. */
   gate: Gate;
+  /** 自包含的 Code 轮次绑定：没有宿主签名凭据时，编程套餐靠它判定模式。 */
+  binding?: TurnBinding;
+  /** 签名凭据的 nonce 首用计时，收缩重放窗口。 */
+  nonces?: NonceStore;
   /** 取该厂商的上游端点；未配置/未知返回 undefined。 */
   resolveUpstream: (provider: ProviderSpec) => string | undefined;
   /** 取该厂商的订阅 Key；未配置返回 undefined。 */
@@ -142,15 +147,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, token: string, 
     return;
   }
 
-  // Coding-only plans must carry this run's mode; activity windows never authorize requests.
-  if (requiresCodeMode(provider)) {
-    if (!context || context.mode !== "code" || context.source !== "conversation") {
-      log.warn(`模式检查拒绝 ${provider.id}`);
-      sendError(res, 403, context
-        ? `星驿：${provider.label} 仅限 Code 交互式会话，当前模式 ${context.mode} / 来源 ${context.source} 不支持。请切换到 Code 模式，或选择通用套餐。`
-        : `星驿：${provider.label} 仅限 Code 模式。宿主未提供本轮模式凭据，请使用支持 Astral Relay 模式验证的 Cyrene 构建；旧版宿主无法使用编程套餐。`);
-      return;
-    }
+  // 签名凭据的 nonce：首次使用开始计时，超窗即拒。
+  if (context && deps.nonces && !deps.nonces.accept(context.nonce)) {
+    sendError(res, 401, "星驿：本轮模式凭据已超出首次使用后的可用时限，请回到 Code 模式开始新一轮对话。");
+    return;
   }
 
   const upstreamBase = resolveUpstream(provider);
@@ -170,6 +170,27 @@ async function handle(req: IncomingMessage, res: ServerResponse, token: string, 
   } catch (err) {
     sendError(res, 400, `请求体读取失败：${err instanceof Error ? err.message : String(err)}`);
     return;
+  }
+
+  // 编程套餐的模式判定。两条路径，插件自己就能完成，不需要任何宿主改动：
+  //
+  //   A. 宿主签名了本轮凭据（ar1）：以签名为准，严格要求 code + conversation。
+  //   B. 没有签名凭据（普通静态 token）：要求请求体里最后一条 user 消息，
+  //      与某次 Code 会话轮次通过 prompt provider 登记过的输入一致。
+  //
+  // 有签名时不回退到 B：宿主已经明确说了本轮是什么模式，内容匹配不该推翻它。
+  // 两条路径都拒绝定时任务、发帖决策与连接测试——那正是条款关心的非交互场景。
+  if (requiresCodeMode(provider)) {
+    const allowed = context
+      ? context.mode === "code" && context.source === "conversation"
+      : deps.binding?.matchesAny(lastUserTexts(body)) === true;
+    if (!allowed) {
+      log.warn(`模式检查拒绝 ${provider.id}`);
+      sendError(res, 403, context
+        ? `星驿：${provider.label} 仅限 Code 交互式会话，当前模式 ${context.mode} / 来源 ${context.source} 不支持。请切换到 Code 模式，或选择通用套餐。`
+        : `星驿：${provider.label} 仅限 Code 模式的交互式对话。本轮请求没有匹配到任何 Code 模式的用户输入：定时任务、朋友圈发帖、模型档案的「连接测试」以及 Chat / Work / Learn 都会被拒绝。请切到 Code 模式直接发消息，或给这些场景换一个按量付费的模型档案。`);
+      return;
+    }
   }
 
   // rest 形如 /v1/chat/completions；厂商端点自带版本段，拼接时去掉重复的 /v1。

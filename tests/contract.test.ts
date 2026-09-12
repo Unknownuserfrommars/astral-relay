@@ -48,6 +48,63 @@ describe("插件契约（构建产物）", () => {
     await ctx.dispose();
   });
 
+  it("Code 会话轮次登记绑定；其它模式与来源不登记", async () => {
+    const ctx = createMockContext();
+    await plugin.register(ctx);
+    const pending = async () =>
+      ((await ctx.ipcChannels.get("get-state")!()) as { binding: { pending: number } }).binding.pending;
+    const provide = (mode: string, source: string, userText: string) =>
+      ctx.promptProviders[0].provide({
+        source: source as never,
+        mode: mode as never,
+        userText,
+        signal: new AbortController().signal,
+      });
+
+    expect(await pending()).toBe(0);
+    await provide("code", "conversation", "重构这个函数");
+    expect(await pending()).toBe(1);
+
+    // 宿主会按 modes / sources 过滤，但插件自己也不能登记这些轮次
+    for (const [mode, source] of [["chat", "conversation"], ["code", "scheduler"], ["code", "moments-post"]]) {
+      await provide(mode, source, `仅 ${mode}/${source} 的输入`);
+    }
+    expect(await pending()).toBe(1);
+    await ctx.dispose();
+  });
+
+  it("get-state 不回传用户输入或其指纹，只回传数量", async () => {
+    const ctx = createMockContext();
+    await plugin.register(ctx);
+    await ctx.promptProviders[0].provide({
+      source: "conversation",
+      mode: "code",
+      userText: "这段话不允许出现在面板状态里",
+      signal: new AbortController().signal,
+    });
+    const state = JSON.stringify(await ctx.ipcChannels.get("get-state")!());
+    expect(state).not.toContain("这段话不允许出现在面板状态里");
+    // 指纹也不给：面板只需要知道有几条
+    expect(state).not.toMatch(/[a-f0-9]{64}/);
+    await ctx.dispose();
+  });
+
+  it("停用后清空登记：重新启用不继承上一轮的授权", async () => {
+    const ctx = createMockContext();
+    await plugin.register(ctx);
+    await ctx.promptProviders[0].provide({
+      source: "conversation",
+      mode: "code",
+      userText: "停用前的输入",
+      signal: new AbortController().signal,
+    });
+    const before = (await ctx.ipcChannels.get("get-state")!()) as { binding: { pending: number } };
+    expect(before.binding.pending).toBe(1);
+    const getState = ctx.ipcChannels.get("get-state")!;
+    await ctx.dispose();
+    expect(((await getState()) as { binding: { pending: number } }).binding.pending).toBe(0);
+  });
+
   it("注册 4 个面板 IPC，并订阅 turn:finished 用于关窗", async () => {
     const ctx = createMockContext();
     await plugin.register(ctx);

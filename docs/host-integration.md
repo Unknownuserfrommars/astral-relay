@@ -1,30 +1,57 @@
-# Cyrene host integration
+# 可选：宿主签名的模式凭据（ar1）
 
-Qwen and Tencent Coding Plans require the companion Cyrene host change. Installing only the plugin on an older host returns HTTP 403 for those plans. Codex, Grok, and MiniMax support every mode with the normal panel token and do not require this host change.
+**先说结论：本插件不需要任何宿主改动。** 装上 ZIP，启用，编程套餐的「仅 Code 模式」
+限制就已经生效——靠的是 Code 轮次绑定（`src/core/turn-binding.ts`），只用到插件 API v1
+本来就有的 prompt provider。
 
-The implementation is in Cyrene's `src/main/orchestrator/astral-relay-auth.ts`, called by `build-options.ts` for conversations and `agent-runtime.ts` for scheduler runs. It transforms only the in-memory run credential, leaving saved model profiles unchanged. Stream requests, retries, and tool continuations use that run's credential through the existing API-key transport.
+本文描述的是一条**可选的、更强的**路径：如果宿主愿意逐请求签名本轮模式，代理会优先采信签名。
+没有它插件照常工作；有它则多一层保证。**上游 Cyrene 没有、也不计划有这项改动**——
+为了一个插件去改宿主源码，那是补丁，不是插件。这里写下来只是为了把契约讲清楚，
+以及给自建构建的人一个参考。
 
-## Wire contract: ar1
+## 两条路径的关系
 
-The panel exposes a random `ar-secret-v1.<secret>` token. The host signs only profiles using that prefix and an HTTP URL matching `127.0.0.1:<port>/p/<provider>/v1`.
+| | 路径 A：Code 轮次绑定（默认） | 路径 B：ar1 签名凭据（可选） |
+|---|---|---|
+| 需要宿主改动 | 否 | 是 |
+| 判定依据 | 请求体最后一条 user 消息，与某次 Code 轮次登记过的输入一致 | 宿主对本轮 provider/mode/source/issuedAt/nonce 的 HMAC 签名 |
+| 拦住的场景 | 定时任务、发帖决策、连接测试、Chat/Work/Learn | 同左 |
+| 拦不住的 | 同一段文本在 Code 模式发过后，TTL 内在其它模式重发 | —— |
+| 共同拦不住的 | 持有本地 token 的本机程序重放 | 持有本地 token 的本机程序自行签名 |
 
-The request's bearer credential (or x-api-key) is `ar1.<payload>.<signature>`:
+代理的取舍很简单：**带签名就以签名为准，不回退到内容匹配**。宿主已经明确说了本轮是什么模式，
+内容碰巧对上不该推翻它。没带签名才走内容匹配。
 
-- Payload: base64url UTF-8 JSON containing `provider`, `mode`, `source`, `issuedAt` (Unix milliseconds), and a random `nonce`.
-- Signature: lowercase hex HMAC-SHA256 of `ar1.<payload>`, using the complete panel token as the key.
-- Verification: valid signature, matching route provider, nonempty nonce, integer timestamp no later than now and less than 24 hours old.
-- Coding-only plans additionally require `mode === "code"` and `source === "conversation"`. Missing context returns 403; invalid signatures return 401.
-- General plans accept either the static panel token or a valid signed credential in any mode.
+## 线上契约：ar1
 
-Do not infer mode from prompts, model names, tools, active windows, or a global time window. Background calls without signed context cannot use coding-only plans. Never persist signed run credentials into profiles or forward them upstream.
+面板给出一个随机的 `ar-secret-v1.<secret>` token。宿主只对使用该前缀、
+且 URL 形如 `http://127.0.0.1:<port>/p/<provider>/v1` 的档案签名。
 
-This prevents accidental cross-mode use by the host. It does not prevent a process holding the panel token from signing its own requests, or replay of a credential during its validity period.
+请求的 bearer 凭据（或 x-api-key）为 `ar1.<payload>.<signature>`：
 
-## Verification
+- payload：base64url 编码的 UTF-8 JSON，含 `provider`、`mode`、`source`、
+  `issuedAt`（Unix 毫秒）与随机 `nonce`。
+- signature：`ar1.<payload>` 的 HMAC-SHA256，小写十六进制，密钥是完整的面板 token。
+- 验证：签名有效、provider 与路由一致、nonce 非空、issuedAt 是不晚于当前时刻且
+  不足 24 小时的整数。
+- nonce 首次出现即开始计时，超过首用窗口（默认 2 小时）不再接受。
+  不做「只许用一次」：同一轮的流式重试与工具续轮共用同一个凭据，严格去重会打断工具续轮。
+- 编程套餐额外要求 `mode === "code"` 且 `source === "conversation"`。
+  签名无效返回 401，模式不符返回 403。
+- 通用套餐接受静态面板 token 或任意模式的有效签名。
 
-1. Build the companion Cyrene source and this plugin.
-2. Open the plugin panel and copy the current Base URL and token into a model profile.
-3. For Qwen / Tencent Coding Plans, verify a Code conversation succeeds and Chat/Work/Learn return 403, including while Code is active.
-4. Verify general BYOS works in each mode and the subscription key replaces the local credential upstream.
+不要从提示词、模型名、工具列表、活动窗口或任何全局时间窗推断模式。
+签名凭据不得写回模型档案，也不得转发给上游。
 
-No real subscription credentials are needed for automated tests; the proxy suite uses a stub upstream.
+## 验证
+
+插件侧的验证不需要宿主：`npm test` 覆盖了两条路径的放行与拒绝。
+
+如果你自建了带签名的宿主，可以跑一次跨仓库契约检查：
+
+```bash
+node scripts/verify-host.mjs <你的 Cyrene 源码目录>
+```
+
+它会同时加载宿主的签名函数与插件的验证函数，遍历 provider × mode × source 组合，
+确认签名能被验出、错误密钥一律失败。自动化测试不需要任何真实订阅凭据。
